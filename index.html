@@ -3,12 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Чат</title>
+<title>Шёпот</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: sans-serif; background: #0f172a; color: #fff; height: 100vh; overflow: hidden; }
   #auth { height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; padding: 20px; }
-  #auth h2 { margin-bottom: 10px; }
+  #auth h2 { margin-bottom: 10px; font-size: 28px; letter-spacing: 1px; }
+  .logo { color: #818cf8; text-shadow: 0 0 10px rgba(129, 140, 248, 0.5); }
+  
   #auth input { width: 100%; max-width: 300px; padding: 14px; border-radius: 10px; border: none; background: #1e293b; color: #fff; font-size: 16px; }
   #auth button { width: 100%; max-width: 300px; padding: 14px; border: none; border-radius: 10px; background: #6366f1; color: #fff; font-size: 16px; font-weight: bold; cursor: pointer; }
   #auth button.gray { background: #334155; }
@@ -17,49 +19,86 @@
   #chat { display: none; height: 100vh; flex-direction: column; }
   #chat.show { display: flex; }
   #top { padding: 14px 20px; background: #1e293b; display: flex; justify-content: space-between; align-items: center; }
-  #top button { padding: 6px 12px; border: none; border-radius: 6px; background: #334155; color: #fff; cursor: pointer; }
-  #msgs { flex: 1; overflow-y: auto; padding: 16px 20px; }
-  .msg { max-width: 75%; background: #1e293b; padding: 8px 12px; border-radius: 10px; margin-bottom: 8px; word-wrap: break-word; }
-  .msg b { font-size: 12px; color: #818cf8; display: block; margin-bottom: 2px; }
-  .msg.own { margin-left: auto; background: #4f46e5; }
+  
+  #top .chat-title { font-weight: bold; font-size: 18px; color: #818cf8; text-shadow: 0 0 8px rgba(129, 140, 248, 0.4); }
+  
+  #top button { padding: 6px 12px; border: none; border-radius: 6px; background: #334155; color: #fff; cursor: pointer; margin-left: 8px; }
+  #top button.danger { background: #ef4444; display: none; /* Скрыта по умолчанию */ }
+  
+  #msgs { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; }
+  .msg { max-width: 75%; background: #1e293b; padding: 8px 12px; border-radius: 10px; margin-bottom: 8px; word-wrap: break-word; align-self: flex-start; position: relative; }
+  .msg b { font-size: 12px; color: #818cf8; display: block; margin-bottom: 4px; }
+  .msg.own { margin-left: auto; background: #4f46e5; align-self: flex-end; }
   .msg.own b { color: #c7d2fe; }
-  #form { display: flex; gap: 8px; padding: 12px; background: #1e293b; }
-  #form input { flex: 1; padding: 12px; border-radius: 10px; border: none; background: #0f172a; color: #fff; font-size: 15px; }
-  #form button { padding: 12px 20px; border: none; border-radius: 10px; background: #6366f1; color: #fff; cursor: pointer; font-size: 18px; }
+  
+  /* Стиль для админа */
+  .msg .admin-nick { color: #ef4444 !important; font-weight: bold; }
+  
+  .msg img, .msg video { max-width: 100%; border-radius: 6px; margin-top: 4px; display: block; }
+  
+  /* Кнопка удаления сообщения (появляется только у админа при наведении) */
+  .del-btn {
+    position: absolute; top: -8px; right: -8px;
+    background: #ef4444; color: #fff; border: none; border-radius: 50%;
+    width: 20px; height: 20px; font-size: 12px; line-height: 1; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+  }
+  .msg:hover .del-btn { display: flex; }
+  
+  #form { display: flex; gap: 8px; padding: 12px; background: #1e293b; align-items: center; }
+  #form input[type="text"] { flex: 1; padding: 12px; border-radius: 10px; border: none; background: #0f172a; color: #fff; font-size: 15px; }
+  #form button { padding: 12px; border: none; border-radius: 10px; background: #6366f1; color: #fff; cursor: pointer; font-size: 18px; }
+  
+  .attach-label { cursor: pointer; font-size: 20px; padding: 8px; color: #94a3b8; transition: color 0.2s; }
+  .attach-label:hover { color: #fff; }
+  #file { display: none; }
+  #loading { color: #fbbf24; font-size: 13px; text-align: center; width: 100%; margin-top: 5px; }
 </style>
 </head>
 <body>
 
-<!-- Экран входа -->
 <div id="auth">
-  <h2>💬 Чат</h2>
-  <input id="email" type="email" placeholder="Email (например, anya@mail.ru)">
-  <input id="pass" type="password" placeholder="Пароль (минимум 6 символов)">
+  <h2 class="logo">🤫 Шёпот</h2>
+  <input id="email" type="email" placeholder="Email">
+  <input id="pass" type="password" placeholder="Пароль (мин. 6 символов)">
   <div id="err"></div>
   <button onclick="reg()">Регистрация</button>
   <button class="gray" onclick="log()">Вход</button>
 </div>
 
-<!-- Экран чата -->
 <div id="chat">
   <div id="top">
-    <span>Вы: <b id="me"></b></span>
-    <button onclick="out()">Выйти</button>
+    <div>
+      <span class="chat-title">🤫 Шёпот</span>
+      <span style="font-size: 12px; color: #94a3b8; margin-left: 10px;">Вы: <b id="me"></b></span>
+    </div>
+    <div>
+      <!-- Кнопка очистки (покажется только админу) -->
+      <button id="clearBtn" class="danger" onclick="clearAll()">Очистить всё 🗑️</button>
+      <button onclick="out()">Выйти</button>
+    </div>
   </div>
   <div id="msgs"></div>
+  
+  <div id="loading"></div>
+  
   <form id="form" onsubmit="send(event)">
-    <input id="text" placeholder="Сообщение..." required autocomplete="off">
+    <label class="attach-label" title="Прикрепить фото/видео">
+      📎
+      <input type="file" id="file" accept="image/*,video/*" onchange="uploadFile()">
+    </label>
+    
+    <input id="text" type="text" placeholder="Прошепчи что-нибудь..." autocomplete="off">
     <button>➤</button>
   </form>
 </div>
 
-<!-- Подключаем Firebase -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+  import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+  import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-storage.js";
 
-  // Твои ключи
   const firebaseConfig = {
     apiKey: "AIzaSyAdfVbrv7JAwZGdVgCapemd8a65R8uRPRs",
     authDomain: "shepot-db359.firebaseapp.com",
@@ -69,49 +108,36 @@
     appId: "1:378918064606:web:d528037e05ee711ecb4d4f"
   };
 
-  // Запуск Firebase
+  // Твой email админа
+  const ADMIN_EMAIL = "hepot@gmail.com"; 
+  const ADMIN_NICK = "hepot"; 
+
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
+  const storage = getStorage(app);
   const msgsCollection = collection(db, 'messages');
 
   const $ = id => document.getElementById(id);
   const apiErr = (code) => {
     if(code === 'auth/email-already-in-use') return 'Этот email уже занят';
-    if(code === 'auth/invalid-credential' || code === 'auth/user-not-found' || code === 'auth/wrong-password') return 'Неверный email или пароль';
-   if(code === 'auth/weak-password') return 'Пароль слишком короткий (мин. 6 символов)';
-    if(code === 'auth/invalid-email') return 'Некорректный email';
+    if(code === 'auth/invalid-credential' || code === 'auth/wrong-password') return 'Неверный email или пароль';
+    if(code === 'auth/weak-password') return 'Пароль слишком короткий';
     return code;
   };
 
-  // --- РЕГИСТРАЦИЯ ---
   window.reg = async () => {
-    const email = $('email').value.trim();
-    const pass = $('pass').value;
-    $('err').textContent = '';
-    try {
-      await createUserWithEmailAndPassword(auth, email, pass);
-    } catch(e) {
-      $('err').textContent = apiErr(e.code);
-    }
+    try { await createUserWithEmailAndPassword(auth, $('email').value.trim(), $('pass').value); } 
+    catch(e) { $('err').textContent = apiErr(e.code); }
   };
 
-  // --- ВХОД ---
   window.log = async () => {
-    const email = $('email').value.trim();
-    const pass = $('pass').value;
-    $('err').textContent = '';
-    try {
-      await signInWithEmailAndPassword(auth, email, pass);
-    } catch(e) {
-      $('err').textContent = apiErr(e.code);
-    }
+    try { await signInWithEmailAndPassword(auth, $('email').value.trim(), $('pass').value); } 
+    catch(e) { $('err').textContent = apiErr(e.code); }
   };
 
-  // --- ВЫХОД ---
   window.out = () => signOut(auth);
 
-  // --- ОТПРАВКА ---
   window.send = async (e) => {
     e.preventDefault();
     const text = $('text').value.trim();
@@ -121,32 +147,113 @@
     await addDoc(msgsCollection, { nick, text, time: Date.now() });
   };
 
-  // --- СЛЕЖИМ ЗА ВХОДОМ ---
+  // --- ЗАГРУЗКА ФАЙЛОВ ---
+  window.uploadFile = async () => {
+    const file = $('file').files[0];
+    if(!file) return;
+    if(file.size > 10 * 1024 * 1024) { alert('Файл слишком большой (макс 10 МБ)'); $('file').value = ''; return; }
+
+    const nick = auth.currentUser.email.split('@')[0];
+    const fileName = Date.now() + '_' + file.name;
+    const storageRef = ref(storage, 'chat_files/' + fileName);
+    $('loading').textContent = 'Шёпот загружается: 0%';
+
+    const uploadTask = uploadBytesResumable(storageRef, file);
+    uploadTask.on('state_changed', 
+      (snapshot) => { $('loading').textContent = `Загрузка: ${Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100)}%`; }, 
+      (error) => { $('loading').textContent = 'Ошибка загрузки'; console.error(error); $('file').value = ''; }, 
+      async () => {
+        const url = await getDownloadURL(uploadTask.snapshot.ref);
+        const type = file.type.startsWith('image/') ? 'image' : 'video';
+        await addDoc(msgsCollection, { nick, text: '', fileUrl: url, fileType: type, time: Date.now() });
+        $('loading').textContent = '';
+        $('file').value = '';
+      }
+    );
+  };
+
+  // --- УДАЛЕНИЕ ВСЕХ СООБЩЕНИЙ ---
+  window.clearAll = async () => {
+    if(!confirm('Ты уверен, что хочешь удалить ВСЕ сообщения?')) return;
+    const snapshot = await getDocs(msgsCollection);
+    const promises = [];
+    snapshot.forEach(docSnap => promises.push(deleteDoc(doc(db, 'messages', docSnap.id))));
+    await Promise.all(promises);
+  };
+
+  // --- УДАЛЕНИЕ ОДНОГО СООБЩЕНИЯ ---
+  window.deleteMsg = async (id) => {
+    if(!confirm('Удалить это сообщение?')) return;
+    await deleteDoc(doc(db, 'messages', id));
+  };
+
+  // --- ОТОБРАЖЕНИЕ СООБЩЕНИЙ ---
   let unsubscribeMsgs = null;
 
   onAuthStateChanged(auth, user => {
     if(user) {
       $('auth').style.display = 'none';
       $('chat').classList.add('show');
-      $('me').textContent = user.email.split('@')[0];
+      
+      const myNick = user.email.split('@')[0];
+      $('me').textContent = myNick;
 
-      // Загружаем сообщения в реальном времени
+      // Проверяем, админ ли это
+      const isAdmin = (user.email === ADMIN_EMAIL);
+
+      // Показываем кнопку "Очистить всё" только админу
+      if(isAdmin) {
+        $('clearBtn').style.display = 'inline-block';
+      }
+
       const q = query(msgsCollection, orderBy('time', 'asc'));
       unsubscribeMsgs = onSnapshot(q, (snapshot) => {
         $('msgs').innerHTML = '';
-        snapshot.forEach(doc => {
-          const m = doc.data();
-          const isOwn = m.nick === user.email.split('@')[0];
+        snapshot.forEach(docSnap => {
+          const m = docSnap.data();
+          const isOwn = m.nick === myNick;
+          const isAdminMsg = m.nick === ADMIN_NICK; 
+          
           const div = document.createElement('div');
           div.className = 'msg' + (isOwn ? ' own' : '');
           
+          // ⚠️ КРЕСТИК УДАЛЕНИЯ ПОЯВЛЯЕТСЯ ТОЛЬКО У АДМИНА
+          if(isAdmin) {
+            const del = document.createElement('button');
+            del.className = 'del-btn';
+            del.textContent = '✕';
+            del.onclick = () => window.deleteMsg(docSnap.id);
+            div.appendChild(del);
+          }
+
           const b = document.createElement('b');
-          b.textContent = m.nick;
+          if (isAdminMsg) {
+            b.innerHTML = '👑 ' + m.nick;
+            b.className = 'admin-nick'; 
+          } else {
+            b.textContent = m.nick;
+          }
+          div.appendChild(b);
+
+          if (m.text) {
+            const t = document.createElement('div');
+            t.textContent = m.text;
+            div.appendChild(t);
+          }
+
+          if (m.fileUrl) {
+            if (m.fileType === 'image') {
+              const img = document.createElement('img');
+              img.src = m.fileUrl;
+              div.appendChild(img);
+            } else if (m.fileType === 'video') {
+              const video = document.createElement('video');
+              video.src = m.fileUrl;
+              video.controls = true;
+              div.appendChild(video);
+            }
+          }
           
-          const t = document.createElement('span');
-          t.textContent = m.text;
-          
-          div.append(b, t);
           $('msgs').appendChild(div);
         });
         $('msgs').scrollTop = $('msgs').scrollHeight;
@@ -155,6 +262,7 @@
     } else {
       $('auth').style.display = 'flex';
       $('chat').classList.remove('show');
+      $('clearBtn').style.display = 'none';
       if(unsubscribeMsgs) unsubscribeMsgs();
     }
   });
