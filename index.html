@@ -26,6 +26,10 @@
   #top button.danger { background: #ef4444; display: none; }
   #top button.admin-btn { background: #eab308; color: #000; font-weight: bold; display: none; }
   
+  #pinnedBar { display: none; background: #0f172a; border-bottom: 1px solid #eab308; padding: 8px 20px; align-items: center; justify-content: space-between; font-size: 13px; color: #eab308; }
+  #pinnedBar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 10px; }
+  #pinnedBar button { background: transparent; border: none; color: #ef4444; cursor: pointer; font-size: 16px; font-weight: bold; }
+
   #msgs { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; }
   
   .msg { max-width: 75%; background: #1e293b; padding: 8px 12px; border-radius: 10px; margin-bottom: 8px; word-wrap: break-word; align-self: flex-start; position: relative; }
@@ -41,6 +45,7 @@
   .btn-del { background: #ef4444; }
   .btn-mute { background: #eab308; }
   .btn-ban { background: #000; border: 1px solid #fff !important; }
+  .btn-pin { background: #6366f1; }
 
   #form { display: flex; gap: 8px; padding: 12px 12px 22px 12px; background: #1e293b; align-items: center; }
   #form input[type="text"] { flex: 1; padding: 12px; border-radius: 10px; border: none; background: #0f172a; color: #fff; font-size: 15px; }
@@ -74,7 +79,8 @@
   .user-list { display: flex; flex-direction: column; gap: 8px; }
   .user-item { background: #0f172a; padding: 10px; border-radius: 8px; display: flex; flex-direction: column; gap: 5px; }
   .user-item .u-info { font-size: 13px; font-weight: bold; }
-  .user-item .u-actions { display: flex; gap: 5px; }
+  .user-item .u-sub { font-size: 11px; color: #94a3b8; font-weight: normal; }
+  .user-item .u-actions { display: flex; gap: 5px; margin-top: 4px; }
   .user-item button { font-size: 11px; padding: 6px; flex: 1; }
   .btn-promote { background: #10b981; }
   .btn-demote { background: #eab308; }
@@ -107,6 +113,12 @@
       <button onclick="out()">Выйти</button>
     </div>
   </div>
+
+  <div id="pinnedBar">
+    <span id="pinnedText">📌 Закреплено: ...</span>
+    <button onclick="unpinMessage()" title="Открепить">✕</button>
+  </div>
+
   <div id="msgs"></div>
   
   <div id="loading"></div>
@@ -146,10 +158,11 @@
 </div>
 
 <div id="adminModal">
-  <div class="modal-content" style="width: 360px;">
+  <div class="modal-content" style="width: 380px;">
     <h3>🛡️ Админ-панель</h3>
     <div class="tabs">
-      <button id="tabUsersBtn" class="active" onclick="switchTab('users')">Все пользователи</button>
+      <button id="tabUsersBtn" class="active" onclick="switchTab('users')">Пользователи</button>
+      <button id="tabMutesBtn" onclick="switchTab('mutes')">Муты</button>
       <button id="tabBansBtn" onclick="switchTab('bans')">Банлист</button>
     </div>
     <div id="adminContent" class="user-list"></div>
@@ -178,6 +191,7 @@
   const db = getFirestore(app);
   const msgsCollection = collection(db, 'messages');
   const usersCollection = collection(db, 'users');
+  const chatSettingsRef = doc(db, 'settings', 'chat');
 
   const $ = id => document.getElementById(id);
   
@@ -189,6 +203,7 @@
   let targetMuteUid = null; 
   let targetMuteNick = null;
   let adminPanelTab = 'users';
+  let allMessages = [];
 
   const apiErr = (code) => {
     if(code === 'auth/email-already-in-use') return 'Этот email уже занят';
@@ -249,6 +264,7 @@
     if (!isAdmin) return;
     adminPanelTab = tab;
     $('tabUsersBtn').classList.toggle('active', tab === 'users');
+    $('tabMutesBtn').classList.toggle('active', tab === 'mutes');
     $('tabBansBtn').classList.toggle('active', tab === 'bans');
     renderAdminPanel();
   };
@@ -264,19 +280,18 @@
     snapshot.forEach(d => users.push({ id: d.id, ...d.data() }));
 
     content.innerHTML = '';
+    const now = Date.now();
 
     if(adminPanelTab === 'users') {
-      // Показываем ТОЛЬКО НЕ ЗАБАНЕННЫХ (и себя не показываем)
-      const activeUsers = users.filter(u => !u.banned && u.id !== auth.currentUser.uid);
-
+      const activeUsers = users.filter(u => !u.banned && u.id !== auth.currentUser.uid && (!u.mutedUntil || u.mutedUntil < now));
+      
       if (activeUsers.length === 0) content.innerHTML = '<p style="text-align:center;color:#94a3b8;font-size:12px;">Нет активных пользователей</p>';
 
       activeUsers.forEach(u => {
         const div = document.createElement('div');
         div.className = 'user-item';
-        
         let roleText = u.role === 'moderator' ? '🛡️ Модератор' : '👤 Пользователь';
-        div.innerHTML = `<div class="u-info">${u.nick} <br><span style="color:#94a3b8;font-weight:normal;">${roleText}</span></div>`;
+        div.innerHTML = `<div class="u-info">${u.nick} <br><span class="u-sub">${roleText}</span></div>`;
         
         const actions = document.createElement('div');
         actions.className = 'u-actions';
@@ -287,17 +302,17 @@
           btnDem.onclick = async () => {
             if (!isAdmin) return;
             await updateDoc(doc(db, 'users', u.id), { role: 'user' });
-            addSystemMessage(`Пользователь ${u.nick} разжалован с модератора.`);
+            addSystemMessage(`Админ ${myProfile.nick} разжаловал пользователя ${u.nick} с модератора.`);
             renderAdminPanel();
           };
           actions.appendChild(btnDem);
         } else {
           const btnProm = document.createElement('button');
-          btnProm.className = 'btn-promote'; btnProm.textContent = 'Сделать модером';
+          btnProm.className = 'btn-promote'; btnProm.textContent = 'В модеры';
           btnProm.onclick = async () => {
             if (!isAdmin) return;
             await updateDoc(doc(db, 'users', u.id), { role: 'moderator' });
-            addSystemMessage(`Пользователь ${u.nick} назначен модератором.`);
+            addSystemMessage(`Админ ${myProfile.nick} назначил пользователя ${u.nick} модератором.`);
             renderAdminPanel();
           };
           actions.appendChild(btnProm);
@@ -308,8 +323,8 @@
         btnBan.onclick = async () => {
           if (!isAdmin) return;
           if(confirm(`Забанить ${u.nick}?`)) {
-            await updateDoc(doc(db, 'users', u.id), { banned: true });
-            addSystemMessage(`Пользователь ${u.nick} получает бан за нарушение правил анонимного чата.`);
+            await updateDoc(doc(db, 'users', u.id), { banned: true, bannedBy: myProfile.nick });
+            addSystemMessage(`Админ ${myProfile.nick} забанил пользователя ${u.nick} за нарушение правил анонимного чата.`);
             renderAdminPanel();
           }
         };
@@ -318,8 +333,36 @@
         div.appendChild(actions);
         content.appendChild(div);
       });
+
+    } else if (adminPanelTab === 'mutes') {
+      const mutedUsers = users.filter(u => u.mutedUntil && u.mutedUntil > now);
+      
+      if (mutedUsers.length === 0) content.innerHTML = '<p style="text-align:center;color:#94a3b8;font-size:12px;">В мутах пусто</p>';
+
+      mutedUsers.forEach(u => {
+        const div = document.createElement('div');
+        div.className = 'user-item';
+        const mins = Math.ceil((u.mutedUntil - now) / 60000);
+        const byWhom = u.mutedBy ? `Мут выдал: ${u.mutedBy}` : '';
+        
+        div.innerHTML = `<div class="u-info">${u.nick} <br><span class="u-sub">Осталось: ${mins} мин. ${byWhom ? '• ' + byWhom : ''}</span></div>`;
+        
+        const actions = document.createElement('div');
+        actions.className = 'u-actions';
+        const btnUnmute = document.createElement('button');
+        btnUnmute.className = 'btn-unban'; btnUnmute.textContent = 'Размутить';
+        btnUnmute.onclick = async () => {
+          if (!isAdmin) return;
+          await updateDoc(doc(db, 'users', u.id), { mutedUntil: 0, mutedBy: null });
+          addSystemMessage(`Админ ${myProfile.nick} снял мут с пользователя ${u.nick}.`);
+          renderAdminPanel();
+        };
+        actions.appendChild(btnUnmute);
+        div.appendChild(actions);
+        content.appendChild(div);
+      });
+
     } else {
-      // Показываем ТОЛЬКО ЗАБАНЕННЫХ
       const banned = users.filter(u => u.banned);
       
       if(banned.length === 0) content.innerHTML = '<p style="text-align:center;color:#94a3b8;font-size:12px;">В банлисте пусто</p>';
@@ -327,7 +370,9 @@
       banned.forEach(u => {
         const div = document.createElement('div');
         div.className = 'user-item';
-        div.innerHTML = `<div class="u-info">${u.nick}</div>`;
+        const byWhom = u.bannedBy ? `Забанил: ${u.bannedBy}` : '';
+        
+        div.innerHTML = `<div class="u-info">${u.nick} <br><span class="u-sub">${byWhom}</span></div>`;
         
         const actions = document.createElement('div');
         actions.className = 'u-actions';
@@ -335,8 +380,8 @@
         btnUnban.className = 'btn-unban'; btnUnban.textContent = 'Разбанить';
         btnUnban.onclick = async () => {
           if (!isAdmin) return;
-          await updateDoc(doc(db, 'users', u.id), { banned: false });
-          addSystemMessage(`Пользователь ${u.nick} разбанен.`);
+          await updateDoc(doc(db, 'users', u.id), { banned: false, bannedBy: null });
+          addSystemMessage(`Админ ${myProfile.nick} разбанил пользователя ${u.nick}.`);
           renderAdminPanel();
         };
         actions.appendChild(btnUnban);
@@ -355,6 +400,30 @@
       senderRole: 'system'
     });
   }
+
+  // --- ЗАКРЕПЛЕНИЕ ---
+  window.pinMessage = async (id) => {
+    if (!isAdmin) return;
+    const msg = allMessages.find(m => m.id === id);
+    if (!msg) return;
+    await setDoc(chatSettingsRef, { pinnedId: id, pinnedText: msg.text || '[Файл]' });
+    addSystemMessage(`Админ ${myProfile.nick} закрепил сообщение от ${msg.nick}.`);
+  };
+
+  window.unpinMessage = async () => {
+    if (!isAdmin) return alert('Доступ запрещен!');
+    await setDoc(chatSettingsRef, { pinnedId: null, pinnedText: null });
+    addSystemMessage(`Админ ${myProfile.nick} открепил сообщение.`);
+  };
+
+  onSnapshot(chatSettingsRef, (snap) => {
+    if (snap.exists() && snap.data().pinnedId) {
+      $('pinnedBar').style.display = 'flex';
+      $('pinnedText').textContent = `📌 Закреплено: ${snap.data().pinnedText}`;
+    } else {
+      $('pinnedBar').style.display = 'none';
+    }
+  });
 
   // --- МУТ ---
   window.toggleMuteMenu = (e, uid, nick) => {
@@ -376,15 +445,16 @@
     
     let msg = '';
     if(minutes === 0) {
-      await updateDoc(userRef, { mutedUntil: 0 });
-      msg = `Пользователь ${targetMuteNick} размучен.`;
+      await updateDoc(userRef, { mutedUntil: 0, mutedBy: null });
+      msg = `Админ ${myProfile.nick} снял мут с пользователя ${targetMuteNick}.`;
     } else {
       const until = Date.now() + (minutes * 60 * 1000);
-      await updateDoc(userRef, { mutedUntil: until });
+      await updateDoc(userRef, { mutedUntil: until, mutedBy: myProfile.nick });
       const timeStr = minutes === 60 ? '1 час' : minutes === 1440 ? '1 день' : minutes === 10080 ? '7 дней' : `${minutes} мин.`;
-      msg = `Пользователь ${targetMuteNick} получает мут на ${timeStr} за нарушение правил анонимного чата.`;
+      msg = `Админ ${myProfile.nick} выдал мут пользователю ${targetMuteNick} на ${timeStr} за нарушение правил анонимного чата.`;
     }
     addSystemMessage(msg);
+    if ($('adminModal').classList.contains('show')) renderAdminPanel();
   };
 
   document.addEventListener('click', (e) => {
@@ -437,10 +507,11 @@
   window.toggleBan = async (uid, currentBan, nick) => {
     if (!isAdmin) return;
     if(!confirm('Забанить/Разбанить этого пользователя?')) return;
-    await updateDoc(doc(db, 'users', uid), { banned: !currentBan });
-    if(!currentBan) addSystemMessage(`Пользователь ${nick} получает бан за нарушение правил анонимного чата.`);
-    else addSystemMessage(`Пользователь ${nick} разбанен.`);
-    // Если открыта панель - обновляем её
+    await updateDoc(doc(db, 'users', uid), { banned: !currentBan, bannedBy: !currentBan ? myProfile.nick : null });
+    
+    if(!currentBan) addSystemMessage(`Админ ${myProfile.nick} забанил пользователя ${nick} за нарушение правил анонимного чата.`);
+    else addSystemMessage(`Админ ${myProfile.nick} разбанил пользователя ${nick}.`);
+    
     if ($('adminModal').classList.contains('show')) renderAdminPanel();
   };
 
@@ -496,7 +567,7 @@
 
       let snap = await getDoc(userRef);
       if(!snap.exists()) {
-        await setDoc(userRef, { nick: user.email.split('@')[0], mutedUntil: 0, banned: false, role: isAdmin ? 'admin' : 'user', color: isAdmin ? "#ef4444" : null });
+        await setDoc(userRef, { nick: user.email.split('@')[0], mutedUntil: 0, mutedBy: null, banned: false, bannedBy: null, role: isAdmin ? 'admin' : 'user', color: isAdmin ? "#ef4444" : null });
       }
 
       $('auth').style.display = 'none';
@@ -505,16 +576,33 @@
       const q = query(msgsCollection, orderBy('time', 'asc'));
       unsubscribeMsgs = onSnapshot(q, (snapshot) => {
         $('msgs').innerHTML = '';
+        allMessages = [];
+        
         snapshot.forEach(docSnap => {
           const m = docSnap.data();
+          m.id = docSnap.id;
+          allMessages.push(m);
+
           const isOwn = m.uid === user.uid;
           const isAdminMsg = m.senderRole === 'admin';
+          const isSystem = m.senderRole === 'system';
           
           const div = document.createElement('div');
           
-          if (m.senderRole === 'system') {
+          if (isSystem) {
             div.className = 'msg system';
             div.textContent = m.text;
+            
+            if (isAdmin) {
+              const controls = document.createElement('div');
+              controls.className = 'admin-controls';
+              const bDel = document.createElement('button');
+              bDel.className = 'btn-del'; bDel.textContent = '✕';
+              bDel.onclick = () => window.deleteMsg(m.id);
+              controls.appendChild(bDel);
+              div.appendChild(controls);
+            }
+            
             $('msgs').appendChild(div);
             return;
           }
@@ -530,8 +618,15 @@
               
               const bDel = document.createElement('button');
               bDel.className = 'btn-del'; bDel.textContent = '✕';
-              bDel.onclick = () => window.deleteMsg(docSnap.id);
+              bDel.onclick = () => window.deleteMsg(m.id);
               controls.appendChild(bDel);
+
+              if(isAdmin) {
+                const bPin = document.createElement('button');
+                bPin.className = 'btn-pin'; bPin.textContent = '📌';
+                bPin.onclick = () => window.pinMessage(m.id);
+                controls.appendChild(bPin);
+              }
 
               if(isAdmin && !isOwn) {
                 const bMute = document.createElement('button');
@@ -576,6 +671,7 @@
       $('chat').classList.remove('show');
       $('clearBtn').style.display = 'none';
       $('adminPanelBtn').style.display = 'none';
+      $('pinnedBar').style.display = 'none';
       myProfile = null;
       if(unsubscribeMsgs) unsubscribeMsgs();
       if(unsubscribeMyProfile) unsubscribeMyProfile();
@@ -583,4 +679,4 @@
   });
 </script>
 </body>
- </html>
+</html> 
