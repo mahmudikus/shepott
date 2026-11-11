@@ -24,13 +24,13 @@
   #top .chat-title { font-weight: bold; font-size: 18px; color: #818cf8; text-shadow: 0 0 8px rgba(129, 140, 248, 0.4); }
   #top button { padding: 6px 12px; border: none; border-radius: 6px; background: #334155; color: #fff; cursor: pointer; margin-left: 8px; }
   #top button.danger { background: #ef4444; display: none; }
+  #top button.admin-btn { background: #eab308; color: #000; font-weight: bold; display: none; }
   
   #msgs { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; }
   .msg { max-width: 75%; background: #1e293b; padding: 8px 12px; border-radius: 10px; margin-bottom: 8px; word-wrap: break-word; align-self: flex-start; position: relative; }
   .msg b { font-size: 12px; color: #818cf8; display: block; margin-bottom: 4px; }
   .msg.own { margin-left: auto; background: #4f46e5; align-self: flex-end; }
   .msg.own b { color: #c7d2fe; }
-  .msg img, .msg video { max-width: 100%; border-radius: 6px; margin-top: 4px; display: block; }
   
   .admin-controls { position: absolute; top: -10px; right: -10px; display: none; gap: 4px; }
   .msg:hover .admin-controls { display: flex; }
@@ -48,9 +48,9 @@
   #file { display: none; }
   #loading { color: #fbbf24; font-size: 13px; text-align: center; width: 100%; margin-top: 5px; }
 
-  #modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; align-items: center; justify-content: center; }
-  #modal.show { display: flex; }
-  .modal-content { background: #1e293b; padding: 20px; border-radius: 12px; width: 300px; display: flex; flex-direction: column; gap: 12px; }
+  #modal, #adminModal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; align-items: center; justify-content: center; }
+  #modal.show, #adminModal.show { display: flex; }
+  .modal-content { background: #1e293b; padding: 20px; border-radius: 12px; width: 320px; display: flex; flex-direction: column; gap: 12px; max-height: 80vh; overflow-y: auto; }
   .modal-content h3 { text-align: center; margin-bottom: 5px; }
   .modal-content input { padding: 10px; border-radius: 8px; border: none; background: #0f172a; color: #fff; font-size: 15px; text-align: center; }
   .modal-content button { padding: 10px; border-radius: 8px; border: none; background: #6366f1; color: #fff; font-size: 15px; font-weight: bold; cursor: pointer; }
@@ -64,6 +64,18 @@
   #muteMenu button { padding: 8px 16px; border: none; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; text-align: left; font-size: 14px; }
   #muteMenu button:hover { background: #334155; }
   #muteMenu button.muted { color: #ef4444; font-weight: bold; }
+
+  .tabs { display: flex; gap: 5px; margin-bottom: 10px; }
+  .tabs button { flex: 1; padding: 8px; font-size: 12px; background: #334155; }
+  .tabs button.active { background: #6366f1; }
+  .user-list { display: flex; flex-direction: column; gap: 8px; }
+  .user-item { background: #0f172a; padding: 10px; border-radius: 8px; display: flex; flex-direction: column; gap: 5px; }
+  .user-item .u-info { font-size: 13px; font-weight: bold; }
+  .user-item .u-actions { display: flex; gap: 5px; }
+  .user-item button { font-size: 11px; padding: 5px; flex: 1; }
+  .btn-promote { background: #10b981; }
+  .btn-demote { background: #eab308; }
+  .btn-unban { background: #10b981; }
 </style>
 </head>
 <body>
@@ -83,8 +95,10 @@
       <span class="chat-title">🤫 Шёпот</span>
       <span style="font-size: 12px; color: #94a3b8; margin-left: 10px;">Вы: <b id="me"></b></span>
       <span id="muteStatus" style="font-size: 12px; color: #ef4444; margin-left: 10px; display: none;"></span>
+      <span id="roleStatus" style="font-size: 12px; color: #10b981; margin-left: 10px; display: none;"></span>
     </div>
     <div>
+      <button id="adminPanelBtn" class="admin-btn" onclick="openAdminPanel()">🛡️ Админ-панель</button>
       <button id="profileBtn" onclick="openProfile()">⚙️ Профиль</button>
       <button id="clearBtn" class="danger" onclick="clearAll()">Очистить всё 🗑️</button>
       <button onclick="out()">Выйти</button>
@@ -128,6 +142,18 @@
   </div>
 </div>
 
+<div id="adminModal">
+  <div class="modal-content" style="width: 360px;">
+    <h3>🛡️ Админ-панель</h3>
+    <div class="tabs">
+      <button id="tabUsersBtn" class="active" onclick="switchTab('users')">Пользователи</button>
+      <button id="tabBansBtn" onclick="switchTab('bans')">Банлист</button>
+    </div>
+    <div id="adminContent" class="user-list"></div>
+    <button class="close" onclick="closeAdminPanel()" style="margin-top: 10px;">Закрыть</button>
+  </div>
+</div>
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
@@ -148,14 +174,17 @@
   const auth = getAuth(app);
   const db = getFirestore(app);
   const msgsCollection = collection(db, 'messages');
+  const usersCollection = collection(db, 'users');
 
   const $ = id => document.getElementById(id);
   
   let myProfile = null; 
   let isAdmin = false;
+  let isModerator = false;
   let unsubscribeMsgs = null;
   let unsubscribeMyProfile = null;
   let targetMuteUid = null; 
+  let adminPanelTab = 'users';
 
   const apiErr = (code) => {
     if(code === 'auth/email-already-in-use') return 'Этот email уже занят';
@@ -180,6 +209,7 @@
     signOut(auth); 
   };
 
+  // --- ПРОФИЛЬ ---
   window.openProfile = () => {
     $('newNick').value = myProfile.nick;
     $('modal').classList.add('show');
@@ -188,10 +218,8 @@
 
   window.saveProfile = async () => {
     const newNick = $('newNick').value.trim();
-    
-    // Если НЕ админ - проверяем на строгий формат
     if(!isAdmin && !/^[a-zA-Zа-яА-ЯёЁ0-9]+$/.test(newNick)) {
-      return alert('Обычные пользователи могут использовать только буквы и цифры, без пробелов!');
+      return alert('Обычные пользователи могут использовать только буквы и цифры!');
     }
     if(!newNick) return alert('Ник не может быть пустым');
 
@@ -206,12 +234,113 @@
     await updateDoc(userRef, { color: color });
   };
 
+  // --- АДМИН-ПАНЕЛЬ (ЗАЩИТА) ---
+  window.openAdminPanel = () => {
+    if (!isAdmin) return alert('Доступ запрещен!'); // Защита от модеров
+    $('adminModal').classList.add('show');
+    renderAdminPanel();
+  };
+  window.closeAdminPanel = () => $('adminModal').classList.remove('show');
+
+  window.switchTab = (tab) => {
+    if (!isAdmin) return;
+    adminPanelTab = tab;
+    $('tabUsersBtn').classList.toggle('active', tab === 'users');
+    $('tabBansBtn').classList.toggle('active', tab === 'bans');
+    renderAdminPanel();
+  };
+
+  async function renderAdminPanel() {
+    if (!isAdmin) return; // Защита: если не админ, панель не рисуется
+
+    const content = $('adminContent');
+    content.innerHTML = '<p style="text-align:center;color:#94a3b8;font-size:12px;">Загрузка...</p>';
+    
+    const snapshot = await getDocs(usersCollection);
+    let users = [];
+    snapshot.forEach(d => users.push({ id: d.id, ...d.data() }));
+
+    content.innerHTML = '';
+
+    if(adminPanelTab === 'users') {
+      users.forEach(u => {
+        if(u.id === auth.currentUser.uid) return;
+        
+        const div = document.createElement('div');
+        div.className = 'user-item';
+        
+        let roleText = u.role === 'moderator' ? '🛡️ Модератор' : '👤 Пользователь';
+        div.innerHTML = `<div class="u-info">${u.nick} <br><span style="color:#94a3b8;font-weight:normal;">${roleText}</span></div>`;
+        
+        const actions = document.createElement('div');
+        actions.className = 'u-actions';
+        
+        if(u.role === 'moderator') {
+          const btnDem = document.createElement('button');
+          btnDem.className = 'btn-demote'; btnDem.textContent = 'Разжаловать';
+          btnDem.onclick = async () => {
+            if (!isAdmin) return;
+            await updateDoc(doc(db, 'users', u.id), { role: 'user' });
+            renderAdminPanel();
+          };
+          actions.appendChild(btnDem);
+        } else {
+          const btnProm = document.createElement('button');
+          btnProm.className = 'btn-promote'; btnProm.textContent = 'Сделать модером';
+          btnProm.onclick = async () => {
+            if (!isAdmin) return;
+            await updateDoc(doc(db, 'users', u.id), { role: 'moderator' });
+            renderAdminPanel();
+          };
+          actions.appendChild(btnProm);
+        }
+
+        const btnBan = document.createElement('button');
+        btnBan.className = 'btn-del'; btnBan.textContent = 'Забанить';
+        btnBan.onclick = async () => {
+          if (!isAdmin) return;
+          if(confirm(`Забанить ${u.nick}?`)) {
+            await updateDoc(doc(db, 'users', u.id), { banned: true });
+            renderAdminPanel();
+          }
+        };
+        actions.appendChild(btnBan);
+        
+        div.appendChild(actions);
+        content.appendChild(div);
+      });
+    } else {
+      const banned = users.filter(u => u.banned);
+      if(banned.length === 0) content.innerHTML = '<p style="text-align:center;color:#94a3b8;font-size:12px;">Пусто</p>';
+      
+      banned.forEach(u => {
+        const div = document.createElement('div');
+        div.className = 'user-item';
+        div.innerHTML = `<div class="u-info">${u.nick}</div>`;
+        
+        const actions = document.createElement('div');
+        actions.className = 'u-actions';
+        const btnUnban = document.createElement('button');
+        btnUnban.className = 'btn-unban'; btnUnban.textContent = 'Разбанить';
+        btnUnban.onclick = async () => {
+          if (!isAdmin) return;
+          await updateDoc(doc(db, 'users', u.id), { banned: false });
+          renderAdminPanel();
+        };
+        actions.appendChild(btnUnban);
+        div.appendChild(actions);
+        content.appendChild(div);
+      });
+    }
+  }
+
+  // --- МУТ ---
   window.toggleMuteMenu = (e, uid) => {
+    if (!isAdmin) return; // Только админ может мутить
     e.preventDefault();
     targetMuteUid = uid;
     const menu = $('muteMenu');
     const rect = e.target.getBoundingClientRect();
-    
     menu.style.top = (rect.bottom + 5) + 'px';
     menu.style.left = (rect.left - 50) + 'px';
     menu.style.display = 'flex';
@@ -219,8 +348,7 @@
 
   window.applyMute = async (minutes) => {
     $('muteMenu').style.display = 'none';
-    if(!targetMuteUid) return;
-    
+    if(!targetMuteUid || !isAdmin) return;
     const userRef = doc(db, 'users', targetMuteUid);
     if(minutes === 0) {
       await updateDoc(userRef, { mutedUntil: 0 });
@@ -236,6 +364,7 @@
     }
   });
 
+  // --- ОТПРАВКА ---
   window.send = async (e) => {
     e.preventDefault();
     if(myProfile.banned) return alert('Вы забанены!');
@@ -252,7 +381,8 @@
       nick: myProfile.nick, 
       text, 
       time: Date.now(),
-      adminColor: isAdmin ? myProfile.color : null 
+      adminColor: isAdmin ? myProfile.color : null,
+      senderRole: isAdmin ? 'admin' : (isModerator ? 'moderator' : 'user')
     });
   };
 
@@ -262,6 +392,7 @@
     $('file').value = '';
   };
 
+  // --- УДАЛЕНИЕ / БАН ---
   window.clearAll = async () => {
     if(!confirm('Удалить ВСЕ сообщения?')) return;
     const snapshot = await getDocs(msgsCollection);
@@ -276,10 +407,12 @@
   };
 
   window.toggleBan = async (uid, currentBan) => {
+    if (!isAdmin) return; // Только админ
     if(!confirm('Забанить/Разбанить этого пользователя?')) return;
     await updateDoc(doc(db, 'users', uid), { banned: !currentBan });
   };
 
+  // --- ВХОД ---
   onAuthStateChanged(auth, async (user) => {
     if(user) {
       isAdmin = (user.email === ADMIN_EMAIL);
@@ -288,6 +421,8 @@
       unsubscribeMyProfile = onSnapshot(userRef, (snap) => {
         if(!snap.exists()) return;
         myProfile = { uid: user.uid, ...snap.data() };
+        
+        isModerator = (myProfile.role === 'moderator');
         $('me').textContent = myProfile.nick;
 
         if(myProfile.banned) {
@@ -304,26 +439,34 @@
           $('muteStatus').style.display = 'none';
         }
 
+        // Показ кнопок в зависимости от роли
         if(isAdmin) {
           $('clearBtn').style.display = 'inline-block';
+          $('adminPanelBtn').style.display = 'inline-block';
           $('adminColorBox').style.display = 'block';
+          $('roleStatus').textContent = '(Админ)'; $('roleStatus').style.display = 'inline';
+        } else if (isModerator) {
+          $('roleStatus').textContent = '(Модератор)'; $('roleStatus').style.display = 'inline';
+        } else {
+          $('roleStatus').style.display = 'none';
+        }
+
+        if(isAdmin && $('colorPalette').innerHTML === '') {
           const colors = ['#ef4444', '#3b82f6', '#10b981', '#eab308', '#a855f7', '#ec4899', '#ffffff'];
           const palette = $('colorPalette');
-          if(palette.innerHTML === '') {
-            colors.forEach(c => {
-              const btn = document.createElement('div');
-              btn.className = 'color-btn' + (myProfile.color === c ? ' active' : '');
-              btn.style.background = c;
-              btn.onclick = () => window.setAdminColor(c);
-              palette.appendChild(btn);
-            });
-          }
+          colors.forEach(c => {
+            const btn = document.createElement('div');
+            btn.className = 'color-btn' + (myProfile.color === c ? ' active' : '');
+            btn.style.background = c;
+            btn.onclick = () => window.setAdminColor(c);
+            palette.appendChild(btn);
+          });
         }
       });
 
       let snap = await getDoc(userRef);
       if(!snap.exists()) {
-        await setDoc(userRef, { nick: user.email.split('@')[0], mutedUntil: 0, banned: false, color: isAdmin ? "#ef4444" : null });
+        await setDoc(userRef, { nick: user.email.split('@')[0], mutedUntil: 0, banned: false, role: isAdmin ? 'admin' : 'user', color: isAdmin ? "#ef4444" : null });
       }
 
       $('auth').style.display = 'none';
@@ -335,39 +478,48 @@
         snapshot.forEach(docSnap => {
           const m = docSnap.data();
           const isOwn = m.uid === user.uid;
+          const isAdminMsg = m.senderRole === 'admin';
           
           const div = document.createElement('div');
           div.className = 'msg' + (isOwn ? ' own' : '');
           
-          if(isAdmin && !isOwn) {
-            const controls = document.createElement('div');
-            controls.className = 'admin-controls';
+          // ЛОГИКА КНОПОК
+          if(isAdmin || isModerator) {
+            const canDelete = isAdmin || (!isOwn && m.senderRole !== 'admin');
             
-            const bDel = document.createElement('button');
-            bDel.className = 'btn-del'; bDel.textContent = '✕';
-            bDel.onclick = () => window.deleteMsg(docSnap.id);
-            
-            const bMute = document.createElement('button');
-            bMute.className = 'btn-mute'; bMute.textContent = '🔇';
-            bMute.onclick = (e) => window.toggleMuteMenu(e, m.uid);
-            
-            const bBan = document.createElement('button');
-            bBan.className = 'btn-ban'; bBan.textContent = '🚫';
-            bBan.onclick = async () => {
-              const uSnap = await getDoc(doc(db, 'users', m.uid));
-              if(uSnap.exists()) window.toggleBan(m.uid, uSnap.data().banned);
-            };
+            if(canDelete) {
+              const controls = document.createElement('div');
+              controls.className = 'admin-controls';
+              
+              const bDel = document.createElement('button');
+              bDel.className = 'btn-del'; bDel.textContent = '✕';
+              bDel.onclick = () => window.deleteMsg(docSnap.id);
+              controls.appendChild(bDel);
 
-            controls.append(bDel, bMute, bBan);
-            div.appendChild(controls);
+              if(isAdmin && !isOwn) {
+                const bMute = document.createElement('button');
+                bMute.className = 'btn-mute'; bMute.textContent = '🔇';
+                bMute.onclick = (e) => window.toggleMuteMenu(e, m.uid);
+                
+                const bBan = document.createElement('button');
+                bBan.className = 'btn-ban'; bBan.textContent = '🚫';
+                bBan.onclick = async () => {
+                  const uSnap = await getDoc(doc(db, 'users', m.uid));
+                  if(uSnap.exists()) window.toggleBan(m.uid, uSnap.data().banned);
+                };
+                controls.append(bMute, bBan);
+              }
+              div.appendChild(controls);
+            }
           }
 
           const b = document.createElement('b');
-          // Корона показывается, если цвет админа задан (т.е. это сообщение админа)
-          const isAdminMsg = m.adminColor !== null && m.adminColor !== undefined;
+          let prefix = '';
+          if(isAdminMsg) prefix = '👑 ';
+          else if(m.senderRole === 'moderator') prefix = '🛡️ ';
           
-          b.innerHTML = isAdminMsg ? '👑 ' + m.nick : m.nick;
-          b.style.color = isAdminMsg ? m.adminColor : (isOwn ? '#c7d2fe' : '#818cf8');
+          b.innerHTML = prefix + m.nick;
+          b.style.color = isAdminMsg ? m.adminColor : (m.senderRole === 'moderator' ? '#10b981' : (isOwn ? '#c7d2fe' : '#818cf8'));
           
           div.appendChild(b);
 
@@ -386,6 +538,7 @@
       $('auth').style.display = 'flex';
       $('chat').classList.remove('show');
       $('clearBtn').style.display = 'none';
+      $('adminPanelBtn').style.display = 'none';
       myProfile = null;
       if(unsubscribeMsgs) unsubscribeMsgs();
       if(unsubscribeMyProfile) unsubscribeMyProfile();
