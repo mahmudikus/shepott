@@ -60,7 +60,6 @@
   .color-btn { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
   .color-btn.active { border-color: #fff; }
 
-  /* Мини-меню для выбора времени мута */
   #muteMenu { display: none; position: fixed; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 8px; z-index: 200; box-shadow: 0 4px 12px rgba(0,0,0,0.5); flex-direction: column; gap: 5px; }
   #muteMenu button { padding: 8px 16px; border: none; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; text-align: left; font-size: 14px; }
   #muteMenu button:hover { background: #334155; }
@@ -106,7 +105,6 @@
   </form>
 </div>
 
-<!-- Меню мута -->
 <div id="muteMenu">
   <button onclick="applyMute(5)">🔇 На 5 минут</button>
   <button onclick="applyMute(60)">🔇 На 1 час</button>
@@ -115,11 +113,10 @@
   <button id="unmuteBtn" class="muted" onclick="applyMute(0)">🔊 Размутить (Снять)</button>
 </div>
 
-<!-- Модальное окно профиля -->
 <div id="modal">
   <div class="modal-content">
     <h3>⚙️ Профиль</h3>
-    <input id="newNick" placeholder="Новый ник (только буквы/цифры)" maxlength="15">
+    <input id="newNick" placeholder="Новый ник" maxlength="25">
     <button onclick="saveProfile()">Сохранить ник</button>
     
     <div id="adminColorBox" style="display:none; margin-top: 10px;">
@@ -151,7 +148,6 @@
   const auth = getAuth(app);
   const db = getFirestore(app);
   const msgsCollection = collection(db, 'messages');
-  const usersCollection = collection(db, 'users');
 
   const $ = id => document.getElementById(id);
   
@@ -159,7 +155,7 @@
   let isAdmin = false;
   let unsubscribeMsgs = null;
   let unsubscribeMyProfile = null;
-  let targetMuteUid = null; // Кого сейчас мутим
+  let targetMuteUid = null; 
 
   const apiErr = (code) => {
     if(code === 'auth/email-already-in-use') return 'Этот email уже занят';
@@ -184,7 +180,6 @@
     signOut(auth); 
   };
 
-  // --- ПРОФИЛЬ ---
   window.openProfile = () => {
     $('newNick').value = myProfile.nick;
     $('modal').classList.add('show');
@@ -193,15 +188,17 @@
 
   window.saveProfile = async () => {
     const newNick = $('newNick').value.trim();
-    if(!/^[a-zA-Zа-яА-ЯёЁ0-9]+$/.test(newNick)) {
-      return alert('Ник может содержать только буквы и цифры, без пробелов!');
+    
+    // Если НЕ админ - проверяем на строгий формат
+    if(!isAdmin && !/^[a-zA-Zа-яА-ЯёЁ0-9]+$/.test(newNick)) {
+      return alert('Обычные пользователи могут использовать только буквы и цифры, без пробелов!');
     }
-    if(!newNick || newNick.length < 2) return alert('Ник слишком короткий');
+    if(!newNick) return alert('Ник не может быть пустым');
 
     const userRef = doc(db, 'users', auth.currentUser.uid);
     await updateDoc(userRef, { nick: newNick });
     closeProfile();
-    alert('Ник изменен! Новые сообщения будут с новым ником.');
+    alert('Ник изменен!');
   };
 
   window.setAdminColor = async (color) => {
@@ -209,14 +206,12 @@
     await updateDoc(userRef, { color: color });
   };
 
-  // --- МУТ (Время) ---
   window.toggleMuteMenu = (e, uid) => {
     e.preventDefault();
     targetMuteUid = uid;
     const menu = $('muteMenu');
     const rect = e.target.getBoundingClientRect();
     
-    // Позиционируем меню под кнопкой
     menu.style.top = (rect.bottom + 5) + 'px';
     menu.style.left = (rect.left - 50) + 'px';
     menu.style.display = 'flex';
@@ -235,14 +230,12 @@
     }
   };
 
-  // Скрываем меню мута при клике в любое место
   document.addEventListener('click', (e) => {
     if(!e.target.closest('#muteMenu') && !e.target.closest('.btn-mute')) {
       $('muteMenu').style.display = 'none';
     }
   });
 
-  // --- ОТПРАВКА ---
   window.send = async (e) => {
     e.preventDefault();
     if(myProfile.banned) return alert('Вы забанены!');
@@ -259,19 +252,16 @@
       nick: myProfile.nick, 
       text, 
       time: Date.now(),
-      adminColor: isAdmin ? myProfile.color : null // Сохраняем цвет админа в сообщение
+      adminColor: isAdmin ? myProfile.color : null 
     });
   };
 
-  // --- ЗАГРУЗКА ФАЙЛОВ ---
   window.uploadFile = async () => {
     if(myProfile.mutedUntil && myProfile.mutedUntil > Date.now() && !isAdmin) { alert('Вам запрещено писать (мут)!'); $('file').value = ''; return; }
-    // ... (код загрузки файлов остается прежним, я его сократил для читаемости, в реальном коде он будет как раньше)
     alert('Загрузка файлов требует платного тарифа Firebase. Пока недоступна.');
     $('file').value = '';
   };
 
-  // --- АДМИН ---
   window.clearAll = async () => {
     if(!confirm('Удалить ВСЕ сообщения?')) return;
     const snapshot = await getDocs(msgsCollection);
@@ -290,13 +280,11 @@
     await updateDoc(doc(db, 'users', uid), { banned: !currentBan });
   };
 
-  // --- ВХОД ---
   onAuthStateChanged(auth, async (user) => {
     if(user) {
       isAdmin = (user.email === ADMIN_EMAIL);
       const userRef = doc(db, 'users', user.uid);
       
-      // Подписываемся на изменения СВОЕГО профиля (чтобы сразу видеть бан/мут)
       unsubscribeMyProfile = onSnapshot(userRef, (snap) => {
         if(!snap.exists()) return;
         myProfile = { uid: user.uid, ...snap.data() };
@@ -308,7 +296,6 @@
           return;
         }
 
-        // Показываем статус мута, если он есть
         if(myProfile.mutedUntil && myProfile.mutedUntil > Date.now() && !isAdmin) {
           const mins = Math.ceil((myProfile.mutedUntil - Date.now()) / 60000);
           $('muteStatus').textContent = `(Мут: ${mins} мин.)`;
@@ -334,7 +321,6 @@
         }
       });
 
-      // Создаем профиль если его нет
       let snap = await getDoc(userRef);
       if(!snap.exists()) {
         await setDoc(userRef, { nick: user.email.split('@')[0], mutedUntil: 0, banned: false, color: isAdmin ? "#ef4444" : null });
@@ -343,7 +329,6 @@
       $('auth').style.display = 'none';
       $('chat').classList.add('show');
 
-      // Подписка на сообщения
       const q = query(msgsCollection, orderBy('time', 'asc'));
       unsubscribeMsgs = onSnapshot(q, (snapshot) => {
         $('msgs').innerHTML = '';
@@ -378,8 +363,12 @@
           }
 
           const b = document.createElement('b');
-          b.innerHTML = (m.nick === "$hepot") ? '👑 ' + m.nick : m.nick;
-          b.style.color = m.adminColor || (isOwn ? '#c7d2fe' : '#818cf8'); // Берем цвет из сообщения
+          // Корона показывается, если цвет админа задан (т.е. это сообщение админа)
+          const isAdminMsg = m.adminColor !== null && m.adminColor !== undefined;
+          
+          b.innerHTML = isAdminMsg ? '👑 ' + m.nick : m.nick;
+          b.style.color = isAdminMsg ? m.adminColor : (isOwn ? '#c7d2fe' : '#818cf8');
+          
           div.appendChild(b);
 
           if (m.text) {
@@ -404,4 +393,4 @@
   });
 </script>
 </body>
-</html>
+</html> 
