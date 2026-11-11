@@ -51,12 +51,11 @@
   .btn-ban { background: #000; border: 1px solid #fff !important; }
   .btn-pin { background: #6366f1; }
 
-  /* УВЕЛИЧЕН ОТСТУП СНИЗУ И ДОБАВЛЕН SAFE AREA ДЛЯ ТЕЛЕФОНОВ */
   #form { 
     display: flex; 
     gap: 8px; 
     padding: 12px 12px 25px 12px; 
-    padding-bottom: calc(25px + env(safe-area-inset-bottom)); /* Автоматический отступ под полоску iPhone */
+    padding-bottom: calc(25px + env(safe-area-inset-bottom));
     background: #1e293b; 
     align-items: center; 
   }
@@ -255,8 +254,10 @@
 
   window.saveProfile = async () => {
     const newNick = $('newNick').value.trim();
-    if(!isAdmin && !/^[a-zA-Zа-яА-ЯёЁ0-9]+$/.test(newNick)) {
-      return alert('Обычные пользователи могут использовать только буквы и цифры!');
+    
+    // Разрешаем буквы, цифры и ПРОБЕЛЫ обычным пользователям
+    if(!isAdmin && !/^[a-zA-Zа-яА-ЯёЁ0-9\s]+$/.test(newNick)) {
+      return alert('Обычные пользователи могут использовать только буквы, цифры и пробелы!');
     }
     if(!newNick) return alert('Ник не может быть пустым');
 
@@ -704,4 +705,4 @@
   });
 </script>
 </body>
-</html> 
+ </html> 
