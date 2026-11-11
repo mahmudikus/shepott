@@ -51,7 +51,6 @@
   .btn-ban { background: #000; border: 1px solid #fff !important; }
   .btn-pin { background: #6366f1; }
 
-  /* УВЕЛИЧЕН ОТСТУП СНИЗУ ДО 35px */
   #form { 
     display: flex; 
     gap: 8px; 
@@ -93,6 +92,7 @@
   .user-item { background: #0f172a; padding: 10px; border-radius: 8px; display: flex; flex-direction: column; gap: 5px; }
   .user-item .u-info { font-size: 13px; font-weight: bold; }
   .user-item .u-sub { font-size: 11px; color: #94a3b8; font-weight: normal; }
+  .user-item .old-nick { font-size: 10px; color: #64748b; font-style: italic; text-decoration: line-through; }
   .user-item .u-actions { display: flex; gap: 5px; margin-top: 4px; }
   .user-item button { font-size: 11px; padding: 6px; flex: 1; }
   .btn-promote { background: #10b981; }
@@ -217,6 +217,9 @@
   let targetMuteNick = null;
   let adminPanelTab = 'users';
   let allMessages = [];
+  
+  // Кэш профилей пользователей для быстрого доступа к никам
+  let usersCache = {};
 
   const apiErr = (code) => {
     if(code === 'auth/email-already-in-use') return 'Этот email уже занят';
@@ -262,7 +265,14 @@
     if(!newNick) return alert('Ник не может быть пустым');
 
     const userRef = doc(db, 'users', auth.currentUser.uid);
-    await updateDoc(userRef, { nick: newNick });
+    
+    // Сохраняем старый ник в историю, если он меняется
+    let updateData = { nick: newNick };
+    if (myProfile.nick !== newNick) {
+      updateData.oldNick = myProfile.nick;
+    }
+    
+    await updateDoc(userRef, updateData);
     closeProfile();
     alert('Ник изменен!');
   };
@@ -301,6 +311,15 @@
     content.innerHTML = '';
     const now = Date.now();
 
+    // Вспомогательная функция для вывода инфы о нике
+    const getNickHtml = (u) => {
+      let html = `<div class="u-info">${u.nick}`;
+      if (u.oldNick) {
+        html += ` <br><span class="old-nick">бывш. ${u.oldNick}</span>`;
+      }
+      return html + `</div>`;
+    };
+
     if(adminPanelTab === 'users') {
       const activeUsers = users.filter(u => !u.banned && u.id !== auth.currentUser.uid && (!u.mutedUntil || u.mutedUntil < now));
       
@@ -310,7 +329,7 @@
         const div = document.createElement('div');
         div.className = 'user-item';
         let roleText = u.role === 'moderator' ? '🛡️ Модератор' : '👤 Пользователь';
-        div.innerHTML = `<div class="u-info">${u.nick} <br><span class="u-sub">${roleText}</span></div>`;
+        div.innerHTML = getNickHtml(u) + `<div class="u-sub">${roleText}</div>`;
         
         const actions = document.createElement('div');
         actions.className = 'u-actions';
@@ -364,7 +383,7 @@
         const mins = Math.ceil((u.mutedUntil - now) / 60000);
         const byWhom = u.mutedBy ? `Мут выдал: ${u.mutedBy}` : '';
         
-        div.innerHTML = `<div class="u-info">${u.nick} <br><span class="u-sub">Осталось: ${mins} мин. ${byWhom ? '• ' + byWhom : ''}</span></div>`;
+        div.innerHTML = getNickHtml(u) + `<div class="u-sub">Осталось: ${mins} мин. ${byWhom ? '• ' + byWhom : ''}</div>`;
         
         const actions = document.createElement('div');
         actions.className = 'u-actions';
@@ -391,7 +410,7 @@
         div.className = 'user-item';
         const byWhom = u.bannedBy ? `Забанил: ${u.bannedBy}` : '';
         
-        div.innerHTML = `<div class="u-info">${u.nick} <br><span class="u-sub">${byWhom}</span></div>`;
+        div.innerHTML = getNickHtml(u) + `<div class="u-sub">${byWhom}</div>`;
         
         const actions = document.createElement('div');
         actions.className = 'u-actions';
@@ -493,10 +512,9 @@
     
     await addDoc(msgsCollection, { 
       uid: auth.currentUser.uid, 
-      nick: myProfile.nick, 
+      // Ник теперь хранится ТОЛЬКО в профиле, в сообщении его больше нет
       text, 
       time: Date.now(),
-      adminColor: isAdmin ? myProfile.color : null,
       senderRole: isAdmin ? 'admin' : (isModerator ? 'moderator' : 'user')
     });
   };
@@ -536,6 +554,7 @@
       isAdmin = (user.email === ADMIN_EMAIL);
       const userRef = doc(db, 'users', user.uid);
       
+      // Подписка на СВОЙ профиль
       unsubscribeMyProfile = onSnapshot(userRef, (snap) => {
         if(!snap.exists()) return;
         myProfile = { uid: user.uid, ...snap.data() };
@@ -583,113 +602,31 @@
 
       let snap = await getDoc(userRef);
       if(!snap.exists()) {
-        await setDoc(userRef, { nick: user.email.split('@')[0], mutedUntil: 0, mutedBy: null, banned: false, bannedBy: null, role: isAdmin ? 'admin' : 'user', color: isAdmin ? "#ef4444" : null });
+        await setDoc(userRef, { nick: user.email.split('@')[0], oldNick: null, mutedUntil: 0, mutedBy: null, banned: false, bannedBy: null, role: isAdmin ? 'admin' : 'user', color: isAdmin ? "#ef4444" : null });
       }
 
       $('auth').style.display = 'none';
       $('chat').classList.add('show');
 
+      // ПОДПИСКА НА ВСЕХ ПОЛЬЗОВАТЕЛЕЙ (чтобы мгновенно обновлять ники в чате)
+      onSnapshot(usersCollection, (usersSnapshot) => {
+        usersCache = {};
+        usersSnapshot.forEach(doc => {
+          usersCache[doc.id] = { id: doc.id, ...doc.data() };
+        });
+
+        // Когда обновился кэш пользователей, перерисовываем сообщения
+        renderMessages();
+      });
+
+      // Подписка на сообщения (просто сохраняем их в массив)
       const q = query(msgsCollection, orderBy('time', 'asc'));
       unsubscribeMsgs = onSnapshot(q, (snapshot) => {
-        $('msgs').innerHTML = '';
         allMessages = [];
-        
         snapshot.forEach(docSnap => {
-          const m = docSnap.data();
-          m.id = docSnap.id;
-          allMessages.push(m);
-
-          const isOwn = m.uid === user.uid;
-          const isAdminMsg = m.senderRole === 'admin';
-          const isSystem = m.senderRole === 'system';
-          
-          const div = document.createElement('div');
-          
-          if (isSystem) {
-            div.className = 'msg system';
-            div.textContent = m.text;
-            
-            const timeSpan = document.createElement('span');
-            timeSpan.className = 'msg-time';
-            timeSpan.textContent = formatTime(m.time);
-            div.appendChild(timeSpan);
-            
-            if (isAdmin) {
-              const controls = document.createElement('div');
-              controls.className = 'admin-controls';
-              const bDel = document.createElement('button');
-              bDel.className = 'btn-del'; bDel.textContent = '✕';
-              bDel.onclick = () => window.deleteMsg(m.id);
-              controls.appendChild(bDel);
-              div.appendChild(controls);
-            }
-            
-            $('msgs').appendChild(div);
-            return;
-          }
-
-          div.className = 'msg' + (isOwn ? ' own' : '');
-          
-          if(isAdmin || isModerator) {
-            const canDelete = isAdmin || (!isOwn && m.senderRole !== 'admin');
-            
-            if(canDelete) {
-              const controls = document.createElement('div');
-              controls.className = 'admin-controls';
-              
-              const bDel = document.createElement('button');
-              bDel.className = 'btn-del'; bDel.textContent = '✕';
-              bDel.onclick = () => window.deleteMsg(m.id);
-              controls.appendChild(bDel);
-
-              if(isAdmin) {
-                const bPin = document.createElement('button');
-                bPin.className = 'btn-pin'; bPin.textContent = '📌';
-                bPin.onclick = () => window.pinMessage(m.id);
-                controls.appendChild(bPin);
-              }
-
-              if(isAdmin && !isOwn) {
-                const bMute = document.createElement('button');
-                bMute.className = 'btn-mute'; bMute.textContent = '🔇';
-                bMute.onclick = (e) => window.toggleMuteMenu(e, m.uid, m.nick);
-                
-                const bBan = document.createElement('button');
-                bBan.className = 'btn-ban'; bBan.textContent = '🚫';
-                bBan.onclick = async () => {
-                  const uSnap = await getDoc(doc(db, 'users', m.uid));
-                  if(uSnap.exists()) window.toggleBan(m.uid, uSnap.data().banned, m.nick);
-                };
-                controls.append(bMute, bBan);
-              }
-              div.appendChild(controls);
-            }
-          }
-
-          const b = document.createElement('b');
-          let prefix = '';
-          if(isAdminMsg) prefix = '👑 ';
-          else if(m.senderRole === 'moderator') prefix = '🛡️ ';
-          
-          b.innerHTML = prefix + m.nick;
-          b.style.color = isAdminMsg ? m.adminColor : (m.senderRole === 'moderator' ? '#10b981' : (isOwn ? '#c7d2fe' : '#818cf8'));
-          
-          div.appendChild(b);
-
-          if (m.text) {
-            const t = document.createElement('div');
-            t.textContent = m.text;
-            div.appendChild(t);
-          }
-
-          const timeSpan = document.createElement('span');
-          timeSpan.className = 'msg-time';
-          timeSpan.textContent = formatTime(m.time);
-          div.appendChild(timeSpan);
-          
-          $('msgs').appendChild(div);
+          allMessages.push({ id: docSnap.id, ...docSnap.data() });
         });
-        $('msgs').scrollTop = $('msgs').scrollHeight;
+        renderMessages();
       });
 
     } else {
@@ -699,10 +636,117 @@
       $('adminPanelBtn').style.display = 'none';
       $('pinnedBar').style.display = 'none';
       myProfile = null;
+      usersCache = {};
       if(unsubscribeMsgs) unsubscribeMsgs();
       if(unsubscribeMyProfile) unsubscribeMyProfile();
     }
   });
+
+  // Отрисовка сообщений (вызывается при любом изменении сообщений или профилей)
+  function renderMessages() {
+    if (!auth.currentUser) return;
+
+    $('msgs').innerHTML = '';
+
+    allMessages.forEach(m => {
+      const isOwn = m.uid === auth.currentUser.uid;
+      const isSystem = m.senderRole === 'system';
+      
+      // Ищем актуальный профиль автора
+      const authorProfile = usersCache[m.uid];
+      // Если профиль есть — берем его ник, иначе заглушку
+      const authorNick = authorProfile ? authorProfile.nick : 'Неизвестный';
+      const authorColor = authorProfile ? authorProfile.color : null;
+
+      const isAdminMsg = m.senderRole === 'admin';
+
+      const div = document.createElement('div');
+      
+      if (isSystem) {
+        div.className = 'msg system';
+        div.textContent = m.text;
+        const timeSpan = document.createElement('span');
+        timeSpan.className = 'msg-time';
+        timeSpan.textContent = formatTime(m.time);
+        div.appendChild(timeSpan);
+        
+        if (isAdmin) {
+          const controls = document.createElement('div');
+          controls.className = 'admin-controls';
+          const bDel = document.createElement('button');
+          bDel.className = 'btn-del'; bDel.textContent = '✕';
+          bDel.onclick = () => window.deleteMsg(m.id);
+          controls.appendChild(bDel);
+          div.appendChild(controls);
+        }
+        $('msgs').appendChild(div);
+        return;
+      }
+
+      div.className = 'msg' + (isOwn ? ' own' : '');
+      
+      if(isAdmin || isModerator) {
+        const canDelete = isAdmin || (!isOwn && m.senderRole !== 'admin');
+        
+        if(canDelete) {
+          const controls = document.createElement('div');
+          controls.className = 'admin-controls';
+          
+          const bDel = document.createElement('button');
+          bDel.className = 'btn-del'; bDel.textContent = '✕';
+          bDel.onclick = () => window.deleteMsg(m.id);
+          controls.appendChild(bDel);
+
+          if(isAdmin) {
+            const bPin = document.createElement('button');
+            bPin.className = 'btn-pin'; bPin.textContent = '📌';
+            bPin.onclick = () => window.pinMessage(m.id);
+            controls.appendChild(bPin);
+          }
+
+          if(isAdmin && !isOwn) {
+            const bMute = document.createElement('button');
+            bMute.className = 'btn-mute'; bMute.textContent = '🔇';
+            bMute.onclick = (e) => window.toggleMuteMenu(e, m.uid, authorNick);
+            
+            const bBan = document.createElement('button');
+            bBan.className = 'btn-ban'; bBan.textContent = '🚫';
+            bBan.onclick = async () => {
+              const uSnap = await getDoc(doc(db, 'users', m.uid));
+              if(uSnap.exists()) window.toggleBan(m.uid, uSnap.data().banned, authorNick);
+            };
+            controls.append(bMute, bBan);
+          }
+          div.appendChild(controls);
+        }
+      }
+
+      const b = document.createElement('b');
+      let prefix = '';
+      if(isAdminMsg) prefix = '👑 ';
+      else if(m.senderRole === 'moderator') prefix = '🛡️ ';
+      
+      b.innerHTML = prefix + authorNick;
+      b.style.color = isAdminMsg ? authorColor : (m.senderRole === 'moderator' ? '#10b981' : (isOwn ? '#c7d2fe' : '#818cf8'));
+      
+      div.appendChild(b);
+
+      if (m.text) {
+        const t = document.createElement('div');
+        t.textContent = m.text;
+        div.appendChild(t);
+      }
+
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'msg-time';
+      timeSpan.textContent = formatTime(m.time);
+      div.appendChild(timeSpan);
+      
+      $('msgs').appendChild(div);
+    });
+
+    $('msgs').scrollTop = $('msgs').scrollHeight;
+  }
 </script>
 </body>
 </html> 
