@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Шёпот</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -37,7 +37,6 @@
   .msg.own { margin-left: auto; background: #4f46e5; align-self: flex-end; }
   .msg.own b { color: #c7d2fe; }
   
-  /* Время сообщения */
   .msg-time { font-size: 10px; color: #64748b; text-align: right; margin-top: 4px; display: block; }
   .msg.own .msg-time { color: #c7d2fe; }
 
@@ -52,7 +51,16 @@
   .btn-ban { background: #000; border: 1px solid #fff !important; }
   .btn-pin { background: #6366f1; }
 
-  #form { display: flex; gap: 8px; padding: 12px 12px 22px 12px; background: #1e293b; align-items: center; }
+  /* УВЕЛИЧЕН ОТСТУП СНИЗУ И ДОБАВЛЕН SAFE AREA ДЛЯ ТЕЛЕФОНОВ */
+  #form { 
+    display: flex; 
+    gap: 8px; 
+    padding: 12px 12px 25px 12px; 
+    padding-bottom: calc(25px + env(safe-area-inset-bottom)); /* Автоматический отступ под полоску iPhone */
+    background: #1e293b; 
+    align-items: center; 
+  }
+  
   #form input[type="text"] { flex: 1; padding: 12px; border-radius: 10px; border: none; background: #0f172a; color: #fff; font-size: 15px; }
   #form button { padding: 12px; border: none; border-radius: 10px; background: #6366f1; color: #fff; cursor: pointer; font-size: 18px; }
   
@@ -217,7 +225,6 @@
     return code;
   };
 
-  // Функция форматирования времени
   const formatTime = (timestamp) => {
     if(!timestamp) return '';
     const date = new Date(timestamp);
@@ -264,7 +271,6 @@
     await updateDoc(userRef, { color: color });
   };
 
-  // --- АДМИН-ПАНЕЛЬ ---
   window.openAdminPanel = () => {
     if (!isAdmin) return alert('Доступ запрещен!');
     $('adminModal').classList.add('show');
@@ -413,7 +419,6 @@
     });
   }
 
-  // --- ЗАКРЕПЛЕНИЕ ---
   window.pinMessage = async (id) => {
     if (!isAdmin) return;
     const msg = allMessages.find(m => m.id === id);
@@ -437,7 +442,6 @@
     }
   });
 
-  // --- МУТ ---
   window.toggleMuteMenu = (e, uid, nick) => {
     if (!isAdmin) return;
     e.preventDefault();
@@ -475,7 +479,6 @@
     }
   });
 
-  // --- ОТПРАВКА ---
   window.send = async (e) => {
     e.preventDefault();
     if(myProfile.banned) return alert('Вы забанены!');
@@ -605,7 +608,6 @@
             div.className = 'msg system';
             div.textContent = m.text;
             
-            // Добавляем время к системным сообщениям
             const timeSpan = document.createElement('span');
             timeSpan.className = 'msg-time';
             timeSpan.textContent = formatTime(m.time);
@@ -679,7 +681,6 @@
             div.appendChild(t);
           }
 
-          // Добавляем время к обычным сообщениям
           const timeSpan = document.createElement('span');
           timeSpan.className = 'msg-time';
           timeSpan.textContent = formatTime(m.time);
@@ -703,4 +704,4 @@
   });
 </script>
 </body>
-</html>
+</html> 
