@@ -37,7 +37,12 @@
   .msg.own { margin-left: auto; background: #4f46e5; align-self: flex-end; }
   .msg.own b { color: #c7d2fe; }
   
+  /* Время сообщения */
+  .msg-time { font-size: 10px; color: #64748b; text-align: right; margin-top: 4px; display: block; }
+  .msg.own .msg-time { color: #c7d2fe; }
+
   .msg.system { align-self: center; background: transparent; color: #eab308; font-size: 13px; font-style: italic; text-align: center; max-width: 90%; padding: 4px; border: none; }
+  .msg.system .msg-time { color: #854d0e; margin-top: 2px; }
   
   .admin-controls { position: absolute; top: -10px; right: -10px; display: none; gap: 4px; }
   .msg:hover .admin-controls { display: flex; }
@@ -210,6 +215,13 @@
     if(code === 'auth/invalid-credential' || code === 'auth/wrong-password') return 'Неверный email или пароль';
     if(code === 'auth/weak-password') return 'Пароль слишком короткий';
     return code;
+  };
+
+  // Функция форматирования времени
+  const formatTime = (timestamp) => {
+    if(!timestamp) return '';
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   window.reg = async () => {
@@ -593,6 +605,12 @@
             div.className = 'msg system';
             div.textContent = m.text;
             
+            // Добавляем время к системным сообщениям
+            const timeSpan = document.createElement('span');
+            timeSpan.className = 'msg-time';
+            timeSpan.textContent = formatTime(m.time);
+            div.appendChild(timeSpan);
+            
             if (isAdmin) {
               const controls = document.createElement('div');
               controls.className = 'admin-controls';
@@ -660,6 +678,12 @@
             t.textContent = m.text;
             div.appendChild(t);
           }
+
+          // Добавляем время к обычным сообщениям
+          const timeSpan = document.createElement('span');
+          timeSpan.className = 'msg-time';
+          timeSpan.textContent = formatTime(m.time);
+          div.appendChild(timeSpan);
           
           $('msgs').appendChild(div);
         });
