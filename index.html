@@ -23,7 +23,7 @@
   #top .chat-title { font-weight: bold; font-size: 18px; color: #818cf8; text-shadow: 0 0 8px rgba(129, 140, 248, 0.4); }
   
   #top button { padding: 6px 12px; border: none; border-radius: 6px; background: #334155; color: #fff; cursor: pointer; margin-left: 8px; }
-  #top button.danger { background: #ef4444; display: none; /* Скрыта по умолчанию */ }
+  #top button.danger { background: #ef4444; display: none; }
   
   #msgs { flex: 1; overflow-y: auto; padding: 16px 20px; display: flex; flex-direction: column; }
   .msg { max-width: 75%; background: #1e293b; padding: 8px 12px; border-radius: 10px; margin-bottom: 8px; word-wrap: break-word; align-self: flex-start; position: relative; }
@@ -31,12 +31,10 @@
   .msg.own { margin-left: auto; background: #4f46e5; align-self: flex-end; }
   .msg.own b { color: #c7d2fe; }
   
-  /* Стиль для админа */
   .msg .admin-nick { color: #ef4444 !important; font-weight: bold; }
   
   .msg img, .msg video { max-width: 100%; border-radius: 6px; margin-top: 4px; display: block; }
   
-  /* Кнопка удаления сообщения */
   .del-btn {
     position: absolute; top: -8px; right: -8px;
     background: #ef4444; color: #fff; border: none; border-radius: 50%;
@@ -45,7 +43,8 @@
   }
   .msg:hover .del-btn { display: flex; }
   
-  #form { display: flex; gap: 8px; padding: 12px; background: #1e293b; align-items: center; }
+  /* Изменено на 10 пикселей снизу */
+  #form { display: flex; gap: 8px; padding: 12px 12px 22px 12px; background: #1e293b; align-items: center; }
   #form input[type="text"] { flex: 1; padding: 12px; border-radius: 10px; border: none; background: #0f172a; color: #fff; font-size: 15px; }
   #form button { padding: 12px; border: none; border-radius: 10px; background: #6366f1; color: #fff; cursor: pointer; font-size: 18px; }
   
@@ -73,7 +72,6 @@
       <span style="font-size: 12px; color: #94a3b8; margin-left: 10px;">Вы: <b id="me"></b></span>
     </div>
     <div>
-      <!-- Кнопка очистки (покажется только админу) -->
       <button id="clearBtn" class="danger" onclick="clearAll()">Очистить всё 🗑️</button>
       <button onclick="out()">Выйти</button>
     </div>
@@ -108,7 +106,6 @@
     appId: "1:378918064606:web:d528037e05ee711ecb4d4f"
   };
 
-  // ВОЗВРАЩАЕМ ДОЛЛАР В ОБЕ ПЕРЕМЕННЫЕ
   const ADMIN_EMAIL = "$hepot@gmail.com"; 
   const ADMIN_NICK = "$hepot"; 
 
@@ -147,7 +144,6 @@
     await addDoc(msgsCollection, { nick, text, time: Date.now() });
   };
 
-  // --- ЗАГРУЗКА ФАЙЛОВ ---
   window.uploadFile = async () => {
     const file = $('file').files[0];
     if(!file) return;
@@ -172,7 +168,6 @@
     );
   };
 
-  // --- УДАЛЕНИЕ ВСЕХ СООБЩЕНИЙ ---
   window.clearAll = async () => {
     if(!confirm('Ты уверен, что хочешь удалить ВСЕ сообщения?')) return;
     const snapshot = await getDocs(msgsCollection);
@@ -181,13 +176,11 @@
     await Promise.all(promises);
   };
 
-  // --- УДАЛЕНИЕ ОДНОГО СООБЩЕНИЯ ---
   window.deleteMsg = async (id) => {
     if(!confirm('Удалить это сообщение?')) return;
     await deleteDoc(doc(db, 'messages', id));
   };
 
-  // --- ОТОБРАЖЕНИЕ СООБЩЕНИЙ ---
   let unsubscribeMsgs = null;
 
   onAuthStateChanged(auth, user => {
@@ -198,10 +191,8 @@
       const myNick = user.email.split('@')[0];
       $('me').textContent = myNick;
 
-      // Проверяем, админ ли это
       const isAdmin = (user.email === ADMIN_EMAIL);
 
-      // Показываем кнопку "Очистить всё" только админу
       if(isAdmin) {
         $('clearBtn').style.display = 'inline-block';
       }
@@ -217,7 +208,6 @@
           const div = document.createElement('div');
           div.className = 'msg' + (isOwn ? ' own' : '');
           
-          // Крестик удаления только для админа
           if(isAdmin) {
             const del = document.createElement('button');
             del.className = 'del-btn';
@@ -268,4 +258,4 @@
   });
 </script>
 </body>
-</html>
+</html> 
